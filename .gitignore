@@ -1,3 +1,4 @@
 rust-mavlink/
 .vscode/
 .DS_Store
+*.zip
