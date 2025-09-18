@@ -1,0 +1,3 @@
+[submodule "orb-slam-elastic"]
+	path = orb-slam-elastic
+	url = git@github.com:a01ixxx/orb-slam-elastic.git
