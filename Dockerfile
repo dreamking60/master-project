@@ -40,7 +40,8 @@ WORKDIR /home
 COPY Pangolin/ Pangolin/
 WORKDIR /home/Pangolin
 RUN mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS="-Wno-error=missing-braces -Wno-error=type-limits" && \
     make -j4 && \
     make install && \
     ldconfig
@@ -61,11 +62,7 @@ RUN sed -i 's/find_package(OpenCV 3.0)/find_package(OpenCV 4.0)/' CMakeLists.txt
 
 # Build ORB-SLAM3 with Pangolin visualization components
 RUN chmod +x build.sh build_ros.sh && \
-    echo "Building ORB-SLAM3 with Pangolin visualization..." && \
-    ./build.sh 2>&1 | tee /home/orb_slam_build.log && \
-    echo "Main ORB-SLAM3 build completed. Attempting ROS build..." && \
-    ./build_ros.sh 2>&1 | tee /home/orb_slam_ros_build.log || echo "ROS build failed (expected without ROS)" && \
-    echo "ORB-SLAM3 build logs saved to /home/orb_slam_build.log and /home/orb_slam_ros_build.log"
+    ./build.sh && ./build_ros.sh
 
 # install rust nightly with workaround for cross-device link issue
 WORKDIR /home
