@@ -1,0 +1,181 @@
+FROM aflplusplus/aflplusplus
+
+WORKDIR  /home
+
+# Set timezone to avoid interactive prompt
+ENV TZ=America/Chicago
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# install dependencies for ORB-SLAM3 including Pangolin
+RUN apt-get update && apt-get install -y \
+    curl \
+    cmake \
+    build-essential \
+    git \
+    pkg-config \
+    clang lld \
+    libeigen3-dev \
+    libopencv-dev \
+    libopencv-contrib-dev \
+    libboost-all-dev \
+    libssl-dev \
+    libfmt-dev \
+    libblas-dev \
+    liblapack-dev \
+    libsuitesparse-dev \
+    libgl1-mesa-dev \
+    libglew-dev \
+    libwayland-dev \
+    libxkbcommon-dev \
+    wayland-protocols \
+    libegl1-mesa-dev \
+    libepoxy-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CC=clang
+ENV CXX=clang++
+
+# Build and install Pangolin first
+WORKDIR /home
+COPY Pangolin/ Pangolin/
+WORKDIR /home/Pangolin
+RUN mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS="-Wno-error=missing-braces -Wno-error=type-limits" && \
+    make -j4 && \
+    make install && \
+    ldconfig
+    
+# Copy and build ORB-SLAM3 elastic library with Pangolin support
+WORKDIR /home
+COPY orb-slam-elastic/ orb-slam-elastic/
+WORKDIR /home/orb-slam-elastic
+
+# Fix OpenCV version check inconsistency in CMakeLists.txt
+RUN sed -i 's/find_package(OpenCV 3.0)/find_package(OpenCV 4.0)/' CMakeLists.txt
+RUN sed -i 's/-march=native/-mtune=generic/g' CMakeLists.txt
+RUN sed -i 's/-march=native/-mtune=generic/g' Thirdparty/g2o/CMakeLists.txt
+RUN sed -i 's/-march=native/-mtune=generic/g' Thirdparty/DBoW2/CMakeLists.txt
+RUN sed -i 's/-march=native/-mtune=generic/g' Examples/ROS/OO_SLAM3/CMakeLists.txt
+RUN sed -i 's/-march=native/-mtune=generic/g' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
+
+# Fix ROS CMakeLists.txt for modern catkin compatibility
+RUN sed -i 's/cmake_minimum_required(VERSION 2.4.6)/cmake_minimum_required(VERSION 3.0.2)/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
+RUN sed -i 's/rosbuild_init()/# rosbuild_init()/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
+RUN sed -i 's/rosbuild_add_executable(/add_executable(/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
+
+# Add find_package for catkin
+RUN sed -i '/cmake_minimum_required/a find_package(catkin REQUIRED COMPONENTS\n  roscpp\n  rospy\n  std_msgs\n  sensor_msgs\n  geometry_msgs\n  tf\n  cv_bridge\n  image_transport\n)\n\ncatkin_package()' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
+RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' src/ORBmatcher.cc
+RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' Thirdparty/DBoW2/DBoW2/FORB.h
+RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' Thirdparty/DBoW2/DBoW2/FORB.cpp
+RUN sed -i '/#include <utility>/a #include <iostream>' include/ImuTypes.h
+
+# Replace C++11/C++0x support check with C++14 standard
+RUN sed -i '/# Check C++11 or C++0x support/,/endif()/c\# Set C++14 standard\
+set(CMAKE_CXX_STANDARD 14)\
+set(CMAKE_CXX_STANDARD_REQUIRED ON)\
+set(CMAKE_CXX_EXTENSIONS OFF)' CMakeLists.txt
+
+# Modify CMakeLists.txt to add warning suppression flags
+#RUN sed -i 's/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall   -O3")/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3 -fsigned-char -Wno-error -Wno-aggressive-loop-optimizations -Wno-class-memaccess -Wno-maybe-uninitialized")/' CMakeLists.txt
+
+# Build ThirdParty libraries first
+RUN echo "Building ThirdParty/DBoW2..." && \
+    cd Thirdparty/DBoW2 && \
+    mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j4
+
+RUN echo "Building ThirdParty/g2o..." && \
+    cd Thirdparty/g2o && \
+    mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j4
+
+RUN echo "Building ThirdParty/Sophus..." && \
+    cd Thirdparty/Sophus && \
+    mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j4
+
+# Build ORB-SLAM3 core library first
+RUN chmod +x build.sh build_ros.sh && \
+    ./build.sh
+
+# Install prerequisites for ROS installation
+RUN apt-get update && apt-get install -y \
+    lsb-release \
+    gnupg2 \
+    software-properties-common \
+    apt-transport-https \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ROS2 Humble (compatible with Ubuntu 22.04)
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository universe \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ros-humble-ros-core \
+    ros-humble-geometry-msgs \
+    ros-humble-sensor-msgs \
+    ros-humble-cv-bridge \
+    ros-humble-image-transport \
+    ros-humble-tf2 \
+    ros-humble-rclcpp \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    && rm -rf /var/lib/apt/lists/*
+
+# Initialize rosdep (avoid sudo in Docker)
+RUN rosdep init && rosdep update
+
+# Setup ROS2 environment
+RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+ENV ROS_DISTRO=humble
+ENV ROS_VERSION=2
+
+# Note: ROS2 nodes would need to be created/ported from ROS1
+# For now, we'll skip building ROS nodes as they require ROS1->ROS2 migration
+# The core ORB-SLAM3 library is still available for use
+
+# install rust nightly with workaround for cross-device link issue
+WORKDIR /home
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path && \
+    rustup toolchain install nightly && \
+    rustup default nightly
+
+# install cargo-fuzz
+RUN cargo install cargo-fuzz
+
+# Create Rust example
+WORKDIR /home/rust-example
+RUN cargo init
+RUN cargo fuzz init
+COPY fuzz_safe_copy.rs fuzz/fuzz_targets/fuzz_target_1.rs
+
+# Create C example (moved to last)
+WORKDIR /home
+RUN mkdir -p c-example/in
+COPY fuzz_simple.c c-example/
+RUN afl-clang-fast -o c-example/fuzz_simple c-example/fuzz_simple.c
+RUN echo "test-stevenchen" > c-example/in/test
+
+# Back to home
+WORKDIR /home
+CMD ["sh", "-c", "echo 'AFL++ + Rust fuzzing environment with ORB-SLAM3 + ROS2 Humble is ready!'; \
+     echo 'Run C fuzzer: afl-fuzz -i c-example/in -o c-example/out -- c-example/fuzz_simple @@'; \
+     echo 'Run Rust fuzzer: cd rust-example && cargo fuzz run fuzz_target_1'; \
+     echo 'ORB-SLAM3 elastic library with Pangolin is built and available in: /home/orb-slam-elastic/'; \
+     echo 'ROS2 Humble is installed (ROS nodes need to be ported from ROS1)'; \
+     echo 'To use ROS2: source /opt/ros/humble/setup.bash'; \
+     exec sh"]

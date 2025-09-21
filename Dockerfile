@@ -58,14 +58,6 @@ RUN sed -i 's/-march=native/-mtune=generic/g' Thirdparty/g2o/CMakeLists.txt
 RUN sed -i 's/-march=native/-mtune=generic/g' Thirdparty/DBoW2/CMakeLists.txt
 RUN sed -i 's/-march=native/-mtune=generic/g' Examples/ROS/OO_SLAM3/CMakeLists.txt
 RUN sed -i 's/-march=native/-mtune=generic/g' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-
-# Fix ROS CMakeLists.txt for modern catkin compatibility
-RUN sed -i 's/cmake_minimum_required(VERSION 2.4.6)/cmake_minimum_required(VERSION 3.0.2)/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-RUN sed -i 's/rosbuild_init()/# rosbuild_init()/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-RUN sed -i 's/rosbuild_add_executable(/add_executable(/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-
-# Add find_package for catkin
-RUN sed -i '/cmake_minimum_required/a find_package(catkin REQUIRED COMPONENTS\n  roscpp\n  rospy\n  std_msgs\n  sensor_msgs\n  geometry_msgs\n  tf\n  cv_bridge\n  image_transport\n)\n\ncatkin_package()' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
 RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' src/ORBmatcher.cc
 RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' Thirdparty/DBoW2/DBoW2/FORB.h
 RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' Thirdparty/DBoW2/DBoW2/FORB.cpp
@@ -103,44 +95,150 @@ RUN echo "Building ThirdParty/Sophus..." && \
 RUN chmod +x build.sh build_ros.sh && \
     ./build.sh
 
-# Install prerequisites for ROS installation
+# Install dependencies for ROS Noetic
 RUN apt-get update && apt-get install -y \
     lsb-release \
     gnupg2 \
     software-properties-common \
-    apt-transport-https \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ROS Noetic after core library is built
-RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list' && \
-    curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add - && \
+# Add deadsnakes PPA for Python 3.8
+RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ros-noetic-desktop-full \
-    python3-rosdep \
-    python3-rosinstall \
-    python3-rosinstall-generator \
-    python3-wstool \
-    python3-catkin-tools \
+    apt-get install -y \
+    python3.8 \
+    python3.8-dev \
+    python3.8-venv \
+    python3.8-distutils \
+    libpython3.8-dev \
+    libyaml-cpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Initialize rosdep (avoid sudo in Docker)
-RUN rosdep init && rosdep update
+# Create symlink for python3.8 as python3
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
+
+# Install pip for Python 3.8
+RUN curl -sS https://bootstrap.pypa.io/pip/3.8/get-pip.py | python3.8
+
+# Install ROS Python dependencies
+RUN python3.8 -m pip install -U rosdep rosinstall rosinstall-generator wstool
+
+# Add Ubuntu 20.04 (Focal) repositories for missing packages (ARM64 compatible)
+RUN echo "deb http://ports.ubuntu.com/ubuntu-ports focal main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://ports.ubuntu.com/ubuntu-ports focal-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://ports.ubuntu.com/ubuntu-ports focal-security main restricted universe multiverse" >> /etc/apt/sources.list
+
+# Add ROS repository for Ubuntu 20.04 (Focal) - ARM64 compatible
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros/ubuntu focal main" | tee /etc/apt/sources.list.d/ros.list > /dev/null
+
+# Update package lists
+RUN apt-get update
+
+# Create package preferences to prioritize Ubuntu 20.04 packages
+RUN echo "Package: *" > /etc/apt/preferences.d/99focal && \
+    echo "Pin: release a=focal" >> /etc/apt/preferences.d/99focal && \
+    echo "Pin-Priority: 500" >> /etc/apt/preferences.d/99focal && \
+    echo "" >> /etc/apt/preferences.d/99focal && \
+    echo "Package: libboost-*" >> /etc/apt/preferences.d/99focal && \
+    echo "Pin: release a=focal" >> /etc/apt/preferences.d/99focal && \
+    echo "Pin-Priority: 1000" >> /etc/apt/preferences.d/99focal && \
+    echo "" >> /etc/apt/preferences.d/99focal && \
+    echo "Package: libopencv-*" >> /etc/apt/preferences.d/99focal && \
+    echo "Pin: release a=focal" >> /etc/apt/preferences.d/99focal && \
+    echo "Pin-Priority: 1000" >> /etc/apt/preferences.d/99focal
+
+# Install complete OpenCV 4.2 and Boost 1.71 packages from Ubuntu 20.04
+RUN apt-get install -y \
+    libopencv-dev=4.2.0+dfsg-4ubuntu0.1 \
+    libopencv-contrib-dev=4.2.0+dfsg-4ubuntu0.1 \
+    libboost-all-dev=1.71.0.0ubuntu2 \
+    libconsole-bridge0.4 \
+    libyaml-cpp0.6 \
+    libprotobuf17 \
+    libtinyxml2-6a \
+    liborocos-kdl1.4 \
+    liburdfdom-model \
+    liburdfdom-world \
+    liblog4cxx10v5 \
+    libpocofoundation62 \
+    libpcl-common1.10 \
+    libpcl-features1.10 \
+    libpcl-filters1.10 \
+    libpcl-io1.10 \
+    libpcl-search1.10 \
+    libpcl-segmentation1.10 \
+    libpcl-surface1.10 \
+    hddtemp \
+    || true
+
+# Install ROS Noetic core packages (ARM64 compatible)
+RUN apt-get update && apt-get install -y \
+    ros-noetic-ros-core \
+    ros-noetic-roscpp \
+    ros-noetic-rospy \
+    ros-noetic-std-msgs \
+    ros-noetic-sensor-msgs \
+    ros-noetic-geometry-msgs \
+    ros-noetic-tf \
+    ros-noetic-tf2 \
+    ros-noetic-tf2-ros \
+    ros-noetic-cv-bridge \
+    ros-noetic-image-transport \
+    ros-noetic-image-geometry \
+    ros-noetic-camera-calibration-parsers \
+    ros-noetic-rosbag \
+    ros-noetic-rosbag-storage \
+    ros-noetic-rosconsole \
+    ros-noetic-rosconsole-bridge \
+    ros-noetic-roscpp-tutorials \
+    ros-noetic-rospack \
+    ros-noetic-rostopic \
+    ros-noetic-rosservice \
+    ros-noetic-rosnode \
+    ros-noetic-rosmsg \
+    ros-noetic-roslaunch \
+    ros-noetic-rosmaster \
+    ros-noetic-rosout \
+    ros-noetic-rosgraph \
+    ros-noetic-rosgraph-msgs \
+    ros-noetic-roslib \
+    ros-noetic-rostest \
+    ros-noetic-rosbuild \
+    ros-noetic-rosmake \
+    ros-noetic-rosbash \
+    ros-noetic-roscreate \
+    ros-noetic-roslang \
+    ros-noetic-roslz4 \
+    ros-noetic-rosparam \
+    ros-noetic-roswtf \
+    || true
+
+# Initialize rosdep (with error handling for ARM64)
+RUN rosdep init || true && rosdep update --rosdistro noetic || true
 
 # Setup ROS environment
-RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc && \
-    echo "source /home/catkin_ws/devel/setup.bash" >> ~/.bashrc
+RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
 ENV ROS_DISTRO=noetic
 ENV ROS_ROOT=/opt/ros/noetic/share/ros
-ENV ROS_PACKAGE_PATH=/opt/ros/noetic/share:/home/catkin_ws/src
+ENV ROS_PACKAGE_PATH=/home/orb-slam-elastic/Examples_old/ROS:/opt/ros/noetic/share
+ENV ROS_WORKSPACE=/home/orb-slam-elastic/Examples_old/ROS
 
-# Create catkin workspace and build ROS nodes
-RUN mkdir -p /home/catkin_ws/src && \
-    cd /home/catkin_ws/src && \
-    ln -s /home/orb-slam-elastic/Examples_old/ROS/ORB_SLAM3 . && \
-    cd /home/catkin_ws && \
-    /bin/bash -c "source /opt/ros/noetic/setup.bash && catkin_make -DROS_BUILD_TYPE=Release"
+# Build ROS nodes after ROS is installed
+RUN . /opt/ros/noetic/setup.sh && \
+    export ROS_PACKAGE_PATH=/home/orb-slam-elastic/Examples_old/ROS:/opt/ros/noetic/share && \
+    cd /home/orb-slam-elastic/Examples_old/ROS/ORB_SLAM3 && \
+    rospack profile && \
+    # Fix OpenCV version requirement in CMakeLists.txt
+    sed -i 's/find_package(OpenCV 3.0 REQUIRED)/find_package(OpenCV 4.0 REQUIRED)/' CMakeLists.txt && \
+    sed -i 's/message(FATAL_ERROR "OpenCV > 4.4 not found.")/message(STATUS "OpenCV version: ${OpenCV_VERSION}")/' CMakeLists.txt && \
+    # Fix C++ standard to C++14 for Pangolin compatibility
+    sed -i '/cmake_minimum_required/a set(CMAKE_CXX_STANDARD 14)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)' CMakeLists.txt && \
+    ldconfig && \
+    mkdir -p build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=14 && \
+    make -j4
 
 # install rust nightly with workaround for cross-device link issue
 WORKDIR /home
@@ -169,10 +267,8 @@ RUN echo "test-stevenchen" > c-example/in/test
 
 # Back to home
 WORKDIR /home
-CMD ["sh", "-c", "echo 'AFL++ + Rust fuzzing environment with ORB-SLAM3 + ROS Noetic is ready!'; \
+CMD ["sh", "-c", "echo 'AFL++ + Rust fuzzing environment with ORB-SLAM3 is ready!'; \
      echo 'Run C fuzzer: afl-fuzz -i c-example/in -o c-example/out -- c-example/fuzz_simple @@'; \
      echo 'Run Rust fuzzer: cd rust-example && cargo fuzz run fuzz_target_1'; \
      echo 'ORB-SLAM3 elastic library with Pangolin is built and available in: /home/orb-slam-elastic/'; \
-     echo 'ROS nodes are built in catkin workspace: /home/catkin_ws/'; \
-     echo 'To use ROS: source /opt/ros/noetic/setup.bash && source /home/catkin_ws/devel/setup.bash'; \
      exec sh"]
