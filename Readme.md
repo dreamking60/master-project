@@ -3,6 +3,10 @@
 ```bash
 docker build -t master-project .
 ```
+Build for ubuntu 20.04
+```bash
+docker build -f Dockerfile.ubuntu20 -t orb-slam-ubuntu20 .
+```
 
 ## Run the Container
 ```bash

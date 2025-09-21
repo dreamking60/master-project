@@ -58,14 +58,6 @@ RUN sed -i 's/-march=native/-mtune=generic/g' Thirdparty/g2o/CMakeLists.txt
 RUN sed -i 's/-march=native/-mtune=generic/g' Thirdparty/DBoW2/CMakeLists.txt
 RUN sed -i 's/-march=native/-mtune=generic/g' Examples/ROS/OO_SLAM3/CMakeLists.txt
 RUN sed -i 's/-march=native/-mtune=generic/g' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-
-# Fix ROS CMakeLists.txt for modern catkin compatibility
-RUN sed -i 's/cmake_minimum_required(VERSION 2.4.6)/cmake_minimum_required(VERSION 3.0.2)/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-RUN sed -i 's/rosbuild_init()/# rosbuild_init()/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-RUN sed -i 's/rosbuild_add_executable(/add_executable(/' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
-
-# Add find_package for catkin
-RUN sed -i '/cmake_minimum_required/a find_package(catkin REQUIRED COMPONENTS\n  roscpp\n  rospy\n  std_msgs\n  sensor_msgs\n  geometry_msgs\n  tf\n  cv_bridge\n  image_transport\n)\n\ncatkin_package()' Examples_old/ROS/ORB_SLAM3/CMakeLists.txt
 RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' src/ORBmatcher.cc
 RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' Thirdparty/DBoW2/DBoW2/FORB.h
 RUN sed -i 's|<stdint-gcc.h>|<cstdint>|' Thirdparty/DBoW2/DBoW2/FORB.cpp
@@ -103,44 +95,37 @@ RUN echo "Building ThirdParty/Sophus..." && \
 RUN chmod +x build.sh build_ros.sh && \
     ./build.sh
 
-# Install prerequisites for ROS installation
+# Install lsb-release and gnupg2
 RUN apt-get update && apt-get install -y \
     lsb-release \
     gnupg2 \
-    software-properties-common \
-    apt-transport-https \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ROS Noetic after core library is built
 RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list' && \
     curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add - && \
     apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    apt-get install -y \
     ros-noetic-desktop-full \
     python3-rosdep \
     python3-rosinstall \
     python3-rosinstall-generator \
     python3-wstool \
-    python3-catkin-tools \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Initialize rosdep (avoid sudo in Docker)
+# Initialize rosdep
 RUN rosdep init && rosdep update
 
 # Setup ROS environment
-RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc && \
-    echo "source /home/catkin_ws/devel/setup.bash" >> ~/.bashrc
+RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
 ENV ROS_DISTRO=noetic
 ENV ROS_ROOT=/opt/ros/noetic/share/ros
-ENV ROS_PACKAGE_PATH=/opt/ros/noetic/share:/home/catkin_ws/src
+ENV ROS_PACKAGE_PATH=/opt/ros/noetic/share
 
-# Create catkin workspace and build ROS nodes
-RUN mkdir -p /home/catkin_ws/src && \
-    cd /home/catkin_ws/src && \
-    ln -s /home/orb-slam-elastic/Examples_old/ROS/ORB_SLAM3 . && \
-    cd /home/catkin_ws && \
-    /bin/bash -c "source /opt/ros/noetic/setup.bash && catkin_make -DROS_BUILD_TYPE=Release"
+# Build ROS nodes after ROS is installed
+RUN . /opt/ros/noetic/setup.sh && \
+    ./build_ros.sh
 
 # install rust nightly with workaround for cross-device link issue
 WORKDIR /home
@@ -169,10 +154,8 @@ RUN echo "test-stevenchen" > c-example/in/test
 
 # Back to home
 WORKDIR /home
-CMD ["sh", "-c", "echo 'AFL++ + Rust fuzzing environment with ORB-SLAM3 + ROS Noetic is ready!'; \
+CMD ["sh", "-c", "echo 'AFL++ + Rust fuzzing environment with ORB-SLAM3 is ready!'; \
      echo 'Run C fuzzer: afl-fuzz -i c-example/in -o c-example/out -- c-example/fuzz_simple @@'; \
      echo 'Run Rust fuzzer: cd rust-example && cargo fuzz run fuzz_target_1'; \
      echo 'ORB-SLAM3 elastic library with Pangolin is built and available in: /home/orb-slam-elastic/'; \
-     echo 'ROS nodes are built in catkin workspace: /home/catkin_ws/'; \
-     echo 'To use ROS: source /opt/ros/noetic/setup.bash && source /home/catkin_ws/devel/setup.bash'; \
      exec sh"]

@@ -8,7 +8,8 @@
 - C++11/C++0x support check should be replaced with C++14 standard.
 - stdint-gcc.h should be replaced with cstdint.
 - ImuTypes.h should include <iostream>
-- Should use clang instead of gcc. 
+- Should use clang instead of gcc.
+- Should build ThirdParty libraries first.
 
 ## Warning
 Add -DCMAKE_CXX_FLAGS="-Wno-error=missing-braces -Wno-error=type-limits" in cmake command to avoid the warning.
