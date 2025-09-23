@@ -1,0 +1,12 @@
+.git
+.gitignore
+*.md
+*.zip
+rust-mavlink/
+# Keep necessary directories
+!Pangolin/
+!orb-slam-elastic/
+!fuzz_safe_copy.rs
+!fuzz_simple.c
+!Dockerfile
+!Dockerfile.*
