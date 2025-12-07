@@ -2,3 +2,13 @@ rust-mavlink/
 .vscode/
 .DS_Store
 *.zip
+
+# Large files
+tb3_rpi4_noetic_20220224.img
+Jenkins WAR file.war
+*.img
+*.war
+
+# Editor swap files
+*.swp
+*~

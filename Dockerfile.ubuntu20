@@ -140,52 +140,52 @@ RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc && \
     ./build_ros.sh"
 
 # Install AFL++ for fuzzing
-# WORKDIR /home
-# RUN git clone https://github.com/AFLplusplus/AFLplusplus.git && \
-#     cd AFLplusplus && \
-#     make distrib && \
-#     make install
+WORKDIR /home
+RUN git clone https://github.com/AFLplusplus/AFLplusplus.git && \
+    cd AFLplusplus && \
+    make distrib && \
+    make install
 
-# # Install Rust nightly
-# WORKDIR /home
-# ENV RUSTUP_HOME=/usr/local/rustup \
-#     CARGO_HOME=/usr/local/cargo \
-#     PATH=/usr/local/cargo/bin:$PATH
-# RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path && \
-#     rustup toolchain install nightly && \
-#     rustup default nightly
+# Install Rust nightly
+WORKDIR /home
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path && \
+    rustup toolchain install nightly && \
+    rustup default nightly
 
-# # Install cargo-fuzz
-# RUN cargo install cargo-fuzz
+# Install cargo-fuzz
+RUN cargo install cargo-fuzz
 
-# # Create Rust fuzzing example
-# WORKDIR /home/rust-example
-# RUN cargo init
-# RUN cargo fuzz init
-# COPY fuzz_safe_copy.rs fuzz/fuzz_targets/fuzz_target_1.rs
+# Create Rust fuzzing example
+WORKDIR /home/rust-example
+RUN cargo init
+RUN cargo fuzz init
+COPY fuzz_safe_copy.rs fuzz/fuzz_targets/fuzz_target_1.rs
 
-# # Create C fuzzing example
-# WORKDIR /home
-# RUN mkdir -p c-example/in
-# COPY fuzz_simple.c c-example/
-# RUN echo "test-stevenchen" > c-example/in/test
+# Create C fuzzing example
+WORKDIR /home
+RUN mkdir -p c-example/in
+COPY fuzz_simple.c c-example/
+RUN echo "test-stevenchen" > c-example/in/test
 
-# # Back to home directory and final cleanup
-# WORKDIR /home
+# Back to home directory and final cleanup
+WORKDIR /home
 
-# # Verify installations
-# RUN echo "Verifying installations..." && \
-#     echo "Pangolin version:" && pkg-config --modversion pangolin 2>/dev/null || echo "Pangolin installed" && \
-#     echo "OpenCV version:" && pkg-config --modversion opencv4 2>/dev/null || echo "OpenCV installed" && \
-#     echo "ROS version:" && rosversion -d 2>/dev/null || echo "ROS installed" && \
-#     echo "ORB-SLAM3 build verification:" && ls -la /home/orb-slam-elastic/lib/ 2>/dev/null || echo "ORB-SLAM3 libraries built" && \
-#     echo "All installations verified successfully!"
+# Verify installations
+RUN echo "Verifying installations..." && \
+    echo "Pangolin version:" && pkg-config --modversion pangolin 2>/dev/null || echo "Pangolin installed" && \
+    echo "OpenCV version:" && pkg-config --modversion opencv4 2>/dev/null || echo "OpenCV installed" && \
+    echo "ROS version:" && rosversion -d 2>/dev/null || echo "ROS installed" && \
+    echo "ORB-SLAM3 build verification:" && ls -la /home/orb-slam-elastic/lib/ 2>/dev/null || echo "ORB-SLAM3 libraries built" && \
+    echo "All installations verified successfully!"
 
-# # Set final command
-# CMD ["sh", "-c", "echo 'Ubuntu 20.04 + AFL++ + Rust + ORB-SLAM3 + ROS Noetic environment is ready!'; \
-#      echo 'Run C fuzzer: afl-fuzz -i c-example/in -o c-example/out -- c-example/fuzz_simple @@'; \
-#      echo 'Run Rust fuzzer: cd rust-example && cargo fuzz run fuzz_target_1'; \
-#      echo 'ORB-SLAM3 library with ROS support is available in: /home/orb-slam-elastic/'; \
-#      echo 'To use ROS: source /opt/ros/noetic/setup.bash'; \
-#      echo 'Environment variables are already set in ~/.bashrc'; \
-#      exec sh"]
+# Set final command
+CMD ["sh", "-c", "echo 'Ubuntu 20.04 + AFL++ + Rust + ORB-SLAM3 + ROS Noetic environment is ready!'; \
+     echo 'Run C fuzzer: afl-fuzz -i c-example/in -o c-example/out -- c-example/fuzz_simple @@'; \
+     echo 'Run Rust fuzzer: cd rust-example && cargo fuzz run fuzz_target_1'; \
+     echo 'ORB-SLAM3 library with ROS support is available in: /home/orb-slam-elastic/'; \
+     echo 'To use ROS: source /opt/ros/noetic/setup.bash'; \
+     echo 'Environment variables are already set in ~/.bashrc'; \
+     exec sh"]
